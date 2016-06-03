@@ -12,9 +12,9 @@ All options:
 --devEUI VAL     : Sets the device unique identifier (default: 0001020304050607)
 --fCnt N         : Sets the first fCnt (default: 1)
 --gatewayEUI VAL : Sets the gateway unique identifier (default: 0001020304050607)
---hex VAL        : Set the hex payload (default: salut)
+--hex VAL        : Set the hex payload (default: empty)
 --nwkSKey VAL    : Sets the network session key
---plain VAL      : Set the plain payload (default: salut)
+--plain VAL      : Set the plain payload (default: empty)
 --routerHost VAL : Sets the router host (default: router.eu.thethings.network)
 --routerPort N   : Sets the router port (default: 1700)
 -n N             : Number of messages to send (default: 1)
