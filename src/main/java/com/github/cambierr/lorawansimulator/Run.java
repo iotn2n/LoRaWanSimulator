@@ -15,14 +15,22 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
-import java.util.Random;
+import java.util.regex.Pattern;
+import javax.crypto.BadPaddingException;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.NoSuchPaddingException;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.kohsuke.args4j.CmdLineException;
+import org.kohsuke.args4j.CmdLineParser;
+import org.kohsuke.args4j.Option;
 
 /**
  *
@@ -30,52 +38,113 @@ import org.json.JSONObject;
  */
 public class Run {
 
-    private static Random random = new Random();
+    private static DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
+    private static String tz;
 
-    private static byte[] devAddr;
-    private static byte[] appEUI;
-    private static byte[] nwkSKey;
-    private static byte[] appSKey;
-    private static byte[] devEUI;
-    private static byte[] gatewayEUI;
+    @Option(name = "--devAddr", usage = "Sets the device address", required = true)
+    private String hex_devAddr = "00010203";
 
-    private static String routerAddress;
-    private static int routerPort;
+    @Option(name = "--nwkSKey", usage = "Sets the network session key", required = true)
+    private String hex_nwkSKey = "000102030405060708090A0B0C0D0E0F";
 
-    private static short fCnt = 0;
+    @Option(name = "--appSKey", usage = "Sets the application session key", required = true)
+    private String hex_appSKey = "000102030405060708090A0B0C0D0E0F";
+
+    @Option(name = "--devEUI", usage = "Sets the device unique identifier", required = false)
+    private String hex_devEUI = "0001020304050607";
+
+    @Option(name = "--gatewayEUI", usage = "Sets the gateway unique identifier", required = false)
+    private String hex_gatewayEUI = "0001020304050607";
+
+    @Option(name = "--fCnt", usage = "Sets the first fCnt", required = false)
+    private short fCnt = 0;
+
+    @Option(name = "--routerHost", usage = "Sets the router host", required = false)
+    private String routerAddress = "router.eu.thethings.network";
+
+    @Option(name = "--routerPort", usage = "Sets the router port", required = false)
+    private int routerPort = 1700;
+
+    @Option(name = "-n", usage = "Number of messages to send", required = false)
+    private int count = 1;
+
+    @Option(name = "--plain", usage = "Set the plain payload", required = false, forbids = {"--hex"})
+    private String txt = "";
+
+    @Option(name = "--hex", usage = "Set the hex payload", required = false, forbids = {"--plain"})
+    private String hex = "";
+
+    private byte[] devAddr;
+    private byte[] nwkSKey;
+    private byte[] appSKey;
+    private byte[] devEUI;
+    private byte[] gatewayEUI;
+    private byte[] payload;
 
     /**
      * @param args the command line arguments
      */
     public static void main(String[] args) throws Exception {
+        new Run().run(args);
+    }
 
-        devAddr = hexStringToByteArray("BA3C02E9");
+    public void run(String[] args) {
+        CmdLineParser parser = new CmdLineParser(this);
+        parser.setUsageWidth(100);
 
-        appEUI = hexStringToByteArray("70B3D57ED00002C0");
+        try {
+            parser.parseArgument(args);
+            Pattern p = Pattern.compile("[0-9A-F]{8}");
+            if (!p.matcher(hex_devAddr).matches()) {
+                throw new CmdLineException("Invalid devAddr");
+            }
+            p = Pattern.compile("[0-9A-F]{32}");
+            if (!p.matcher(hex_nwkSKey).matches()) {
+                throw new CmdLineException("Invalid nwkSKey");
+            }
+            if (!p.matcher(hex_appSKey).matches()) {
+                throw new CmdLineException("Invalid appSKey");
+            }
+            p = Pattern.compile("[0-9A-F]{16}");
+            if (!p.matcher(hex_devEUI).matches()) {
+                throw new CmdLineException("Invalid devEUI");
+            }
+            if (!p.matcher(hex_gatewayEUI).matches()) {
+                throw new CmdLineException("Invalid gatewayEUI");
+            }
+            if (!hex.equals("")) {
+                p = Pattern.compile("([0-9A-F][0-9A-F]){1,125}");
+                if (!p.matcher(hex).matches()) {
+                    throw new CmdLineException("Invalid hex payload");
+                }
+            }
 
-        nwkSKey = hexStringToByteArray("7077724ACAE9B1A72FBB0197E7892241");
+        } catch (CmdLineException ex) {
+            System.err.println(ex.getMessage());
+            parser.printUsage(System.err);
+            System.err.println();
+            return;
+        }
 
-        appSKey = hexStringToByteArray("3A4AE8EDEEAEEF4815E200BAB5BDAC28");
-
-        devEUI = new byte[8];
-        random.nextBytes(devEUI);
-
-        gatewayEUI = new byte[8];
-        random.nextBytes(gatewayEUI);
-
-        routerAddress = "router.eu.thethings.network";
-
-        routerPort = 1700;
-        
-        
+        devAddr = hexStringToByteArray(hex_devAddr);
         reverseArray(devAddr);
-        for (int i = 0; i < 1; i++) {
-            run();
+        nwkSKey = hexStringToByteArray(hex_nwkSKey);
+        appSKey = hexStringToByteArray(hex_appSKey);
+        devEUI = hexStringToByteArray(hex_devEUI);
+        gatewayEUI = hexStringToByteArray(hex_gatewayEUI);
+        if (!hex.equals("")) {
+            payload = hexStringToByteArray(hex);
+        } else {
+            payload = txt.getBytes();
+        }
+
+        for (int i = 0; i < count; i++) {
+            doWork();
         }
 
     }
 
-    private static void send(byte[] _data) throws Exception {
+    private void send(byte[] _data) throws Exception {
         InetAddress address = InetAddress.getByName(routerAddress);
 
         DatagramPacket packet = new DatagramPacket(_data, _data.length, address, routerPort);
@@ -85,7 +154,7 @@ public class Run {
         dsocket.close();
     }
 
-    private static void reverseArray(byte[] _array) {
+    private void reverseArray(byte[] _array) {
         byte tmp;
         for (int i = 0; i < _array.length / 2; i++) {
             tmp = _array[i];
@@ -94,7 +163,7 @@ public class Run {
         }
     }
 
-    public static byte[] hexStringToByteArray(String s) {
+    private byte[] hexStringToByteArray(String s) {
         int len = s.length();
         byte[] data = new byte[len / 2];
         for (int i = 0; i < len; i += 2) {
@@ -104,8 +173,7 @@ public class Run {
         return data;
     }
 
-    private static void run() throws Exception {
-
+    private void doWork() {
 
         PhyPayload pp = new PhyPayload(Direction.UP);
         pp.setMHDR((byte) (1 << 7));
@@ -125,15 +193,18 @@ public class Run {
         DataPayload p = new DataPayload(mp);
         p.setAppSKey(appSKey);
         p.setNwkSKey(nwkSKey);
-        p.setClearPayLoad("salut".getBytes());
+
+        try {
+            p.setClearPayLoad(payload);
+        } catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | IllegalBlockSizeException | BadPaddingException ex) {
+            throw new RuntimeException(ex);
+        }
 
         pp.setMic(p.computeMic());
 
-        ByteBuffer bb = ByteBuffer.allocate(1024);
+        ByteBuffer bb = ByteBuffer.allocate(384);
         pp.toRaw(bb);
         byte[] data = Arrays.copyOfRange(bb.array(), 0, bb.capacity() - bb.remaining());
-
-        DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
 
         JSONArray rxpk = new JSONArray()
                 .put(new JSONObject()
@@ -162,9 +233,13 @@ public class Run {
         pckt.put(gatewayEUI);
         pckt.put(packet.getBytes());
 
-        send(Arrays.copyOfRange(pckt.array(), 0, pckt.capacity() - pckt.remaining()));
+        try {
+            send(Arrays.copyOfRange(pckt.array(), 0, pckt.capacity() - pckt.remaining()));
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
 
-        System.out.println("sent !");
+        System.out.println("Packet: " + packet);
     }
 
 }
