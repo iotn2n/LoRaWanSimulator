@@ -60,7 +60,7 @@ public class Run {
     private short fCnt = 0;
 
     @Option(name = "--routerHost", usage = "Sets the router host", required = false)
-    private String routerAddress = "router.eu.thethings.network";
+    private String routerAddress = "router.eu.staging.thethings.network";
 
     @Option(name = "--routerPort", usage = "Sets the router port", required = false)
     private int routerPort = 1700;
